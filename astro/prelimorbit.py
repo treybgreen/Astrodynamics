@@ -1,6 +1,19 @@
-import math
+from astro.util import *
 
-from astro.util import stumpff_c, stumpff_s
+
+class Gibbs:
+    def __init__(self, mu=398600):
+        self.mu = mu
+
+    def solve(self, r1, r2, r3):
+        r1_mag = magnitude(r1)
+        r2_mag = magnitude(r2)
+        r3_mag = magnitude(r3)
+
+        n1_hat = r1 / r1_mag
+
+        v2 = [0, 0, 0]
+        return v2
 
 
 class Laguerre:
@@ -10,15 +23,15 @@ class Laguerre:
         return
 
     def solve(self, r, v, delta_t, e=None):
-        r0 = math.sqrt(math.pow(r[0], 2) + math.pow(r[1], 2) + math.pow(r[2], 2))
-        v0 = math.sqrt(math.pow(v[0], 2) + math.pow(v[1], 2) + math.pow(v[2], 2))
+        r0 = magnitude(r)
+        v0 = magnitude(v)
         r_dot_v = r[0] * v[0] + r[1] * v[1] + r[2] * v[2]
 
         if e is None:
             e_0 = ((v0 ** 2 / self.mu) - (1 / r0)) * r[0] - (r_dot_v / self.mu) * v[0]
             e_1 = ((v0 ** 2 / self.mu) - (1 / r0)) * r[1] - (r_dot_v / self.mu) * v[1]
             e_2 = ((v0 ** 2 / self.mu) - (1 / r0)) * r[2] - (r_dot_v / self.mu) * v[2]
-            e = math.sqrt(math.pow(e_0, 2) + math.pow(e_1, 2) + math.pow(e_2, 2))
+            e = magnitude([e_0, e_1, e_2])
 
         a = self.mu / ((2 * self.mu / r0) - math.pow(v0, 2))  # km
         p = a * (1 - math.pow(e, 2))  # semi-lattice parameter (km)
@@ -47,8 +60,7 @@ class Laguerre:
 
         # Calculate r from the converged X and Z values
         r1_mag = stumpff_c(z0) * math.pow(x0, 2) + (r_dot_v / math.sqrt(self.mu)) * (
-                    1 - stumpff_s(z0) * z0) * x0 + r0 * (
-                         1 - stumpff_c(z0) * z0)
+                1 - stumpff_s(z0) * z0) * x0 + r0 * (1 - stumpff_c(z0) * z0)
         nu1 = math.acos(((p / r1_mag) - 1) / e)
         print("nu1: ", nu1 * 180 / math.pi, "(degrees)")
         print("r1:  ", r1_mag, "(km)")

@@ -3,6 +3,13 @@ import math
 stumpff_range = 20
 
 
+def magnitude(vector):
+    mag_square = 0
+    for elem in vector:
+        mag_square += math.pow(elem, 2)
+    return math.sqrt(mag_square)
+
+
 def stumpff_s(z):
     # Stumpff S function expansion
     s_n = 0
