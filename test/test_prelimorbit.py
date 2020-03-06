@@ -1,6 +1,6 @@
 import unittest
 
-from astro import prelimorbit
+from astro import prelimorbit, util
 
 
 class PreliminaryOrbitTest(unittest.TestCase):
@@ -19,6 +19,19 @@ class PreliminaryOrbitTest(unittest.TestCase):
         self.assertAlmostEqual(v[1], -3.21160, places=4)
         self.assertAlmostEqual(v[2], -1.46129, places=4)
 
+    def test_gibbs(self):
+        r1 = [0, 0, 6378.137]
+        r2 = [0, -4464.696, -5102.509]
+        r3 = [0, 5740.323, 3189.068]
+
+        gibbs = prelimorbit.Gibbs()
+        v2 = gibbs.solve(r1, r2, r3)
+        v2_mag = util.magnitude(v2)
+
+        self.assertAlmostEqual(v2[0], 0.00000, places=4)
+        self.assertAlmostEqual(v2[1], 5.5311448, places=4)
+        self.assertAlmostEqual(v2[2], -5.1918029, places=4)
+        self.assertAlmostEqual(v2_mag, 7.58, places=1)
 
 if __name__ == '__main__':
     unittest.main()
