@@ -33,5 +33,6 @@ class PreliminaryOrbitTest(unittest.TestCase):
         self.assertAlmostEqual(v2[2], -5.1918029, places=4)
         self.assertAlmostEqual(v2_mag, 7.58, places=1)
 
+
 if __name__ == '__main__':
     unittest.main()

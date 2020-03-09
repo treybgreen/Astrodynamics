@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 stumpff_range = 20
 
 
@@ -8,6 +10,12 @@ def magnitude(vector):
     for elem in vector:
         mag_square += math.pow(elem, 2)
     return math.sqrt(mag_square)
+
+
+def rotate_2D(theta, vector):
+    rotation_matrix = np.array([[np.cos(theta), -np.sin(theta)],
+                                [np.sin(theta), np.cos(theta)]])
+    return np.dot(rotation_matrix, vector)
 
 
 def normalize(vector, mag=None):

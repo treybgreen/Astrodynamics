@@ -1,4 +1,292 @@
+from matplotlib import pyplot as plt
+from scipy import optimize
+
 from astro.util import *
+
+
+def gauss_q1(x, a, b, c):
+    return np.power(x, 8) + a * np.power(x, 6) + b * np.power(x, 3) + c
+
+
+def gauss_q_improve(x, r2, alpha, rv_r, mu, tau):
+    lhs = np.sqrt(mu) * tau
+    rhs1 = r2 * rv_r * np.square(x) * stumpff_c(alpha * np.square(x)) / np.sqrt(mu)
+    rhs2 = (-alpha * r2 + 1) * np.power(x, 3) * stumpff_s(alpha * np.square(x))
+    rhs3 = r2 * x
+    return rhs1 + rhs2 + rhs3 - lhs
+
+
+class Gauss:
+    def __init__(self, use_gibbs=True, improvement=True, mu=np.double(3.986e5), flattening=np.double(3.353e-3),
+                 radius_earth=np.double(6378.137), improvement_error=np.double(10e-12), max_iter=1000):
+        print()
+        print("Defining Gaussian Preliminary Orbit Determination\n")
+        self.mu = mu
+        self.radius_earth = radius_earth  # Radius of Earth (km)
+        self.flattening = flattening
+        self.observations = 0
+        self.latitude = np.double(0.0)
+        self.longitude = np.double(0.0)
+        self.altitude = np.double(0.0)
+        self.ascension = []
+        self.declination = []
+        self.sidereal = []
+        self.time = []
+        self.rho = []
+        self.radius = []
+
+        self.improvement = improvement
+        self.error = improvement_error
+        self.max_iteration = max_iter
+        self.use_gibbs = use_gibbs
+        self.gibbs = Gibbs(mu=self.mu)
+        self.rho1_change = []
+        self.rho2_change = []
+        self.rho3_change = []
+
+    def def_observation(self, latitude, longitude, altitude, degrees=False):
+        if degrees:
+            self.altitude = altitude
+            self.latitude = np.radians(latitude)
+            self.longitude = np.radians(longitude)
+        else:
+            self.altitude = altitude
+            self.latitude = latitude
+            self.longitude = longitude
+
+        print("\tObservation Site Defined")
+        print("\t\tNorthward Latitude:\t", np.degrees(self.latitude))
+        print("\t\tWestward Longitude:\t", np.degrees(self.longitude))
+        print("\t\tAltitude:          \t", self.altitude)
+        print()
+
+    def add_observation(self, ascension, declination, sidereal, seconds_elapsed):
+        # time: the amount of time since the first observation in seconds.
+
+        if self.observations >= 3:
+            raise Exception("The gauss method only needs 3 observations")
+
+        self.ascension.append(np.radians(ascension))
+        self.declination.append(np.radians(declination))
+        self.sidereal.append(np.radians(sidereal))
+        self.time.append(np.double(seconds_elapsed))
+        self.observations += 1
+        n = self.observations - 1
+
+        radius_x = (self.radius_earth / np.sqrt(1 - (2 * self.flattening - np.square(self.flattening)) * np.square(
+            np.sin(self.latitude))) + self.altitude) * np.cos(self.latitude) * np.cos(self.sidereal[n])
+        radius_y = (self.radius_earth / np.sqrt(1 - (2 * self.flattening - np.square(self.flattening)) * np.square(
+            np.sin(self.latitude))) + self.altitude) * np.cos(self.latitude) * np.sin(self.sidereal[n])
+        radius_z = ((np.square(1 - self.flattening) * self.radius_earth) / np.sqrt(
+            1 - (2 * self.flattening - np.square(self.flattening)) * np.square(
+                np.sin(self.latitude))) + self.altitude) * np.sin(self.latitude)
+        self.radius.append(np.array([radius_x, radius_y, radius_z]))
+
+        l_x = np.cos(self.ascension[n]) * np.cos(self.declination[n])
+        l_y = np.sin(self.ascension[n]) * np.cos(self.declination[n])
+        l_z = np.sin(self.declination[n])
+
+        self.rho.append(np.array([l_x, l_y, l_z]))
+
+        print("\tGauss Observation", self.observations, "Added")
+        print("\t\tAscension:\t\t", np.degrees(self.ascension[n]))
+        print("\t\tDeclination:\t", np.degrees(self.declination[n]))
+        print("\t\tSidereal Time:\t", np.degrees(self.sidereal[n]))
+        print("\t\tTime Elapsed:\t", self.time[n])
+        print("\t\tPosition X:\t\t", radius_x)
+        print("\t\tPosition Y:\t\t", radius_y)
+        print("\t\tPosition Z:\t\t", radius_z)
+        print("\t\tRho_hat:\t\t", self.rho[n])
+        print()
+
+    def solve(self):
+        tau1 = self.time[0] - self.time[1]
+        tau3 = self.time[2] - self.time[1]
+        tau = self.time[2] - self.time[0]
+
+        p1 = np.cross(self.rho[1], self.rho[2])
+        p2 = np.cross(self.rho[0], self.rho[2])
+        p3 = np.cross(self.rho[0], self.rho[1])
+
+        d0 = np.dot(self.rho[0], p1)
+        d11 = np.dot(self.radius[0], p1)
+        d12 = np.dot(self.radius[0], p2)
+        d13 = np.dot(self.radius[0], p3)
+        d21 = np.dot(self.radius[1], p1)
+        d22 = np.dot(self.radius[1], p2)
+        d23 = np.dot(self.radius[1], p3)
+        d31 = np.dot(self.radius[2], p1)
+        d32 = np.dot(self.radius[2], p2)
+        d33 = np.dot(self.radius[2], p3)
+
+        aa = (-d12 * tau3 / tau + d22 + d32 * tau1 / tau) / d0
+        bb = (d12 * (np.square(tau3) - np.square(tau)) * tau3 / tau + d32 * (
+                np.square(tau) - np.square(tau1)) * tau1 / tau) / (6 * d0)
+        ee = np.dot(self.radius[1], self.rho[1])
+
+        radius2_square = np.square(np.linalg.norm(self.radius[1]))
+        a = -np.square(aa) - 2 * aa * ee - radius2_square
+        b = -2 * self.mu * bb * (aa + ee)
+        c = -np.square(self.mu) * np.square(bb)
+
+        x_small = 0
+        x_big = 15000
+
+        print("\tFinding Root of Q1")
+        solution = optimize.root_scalar(gauss_q1, (a, b, c), bracket=[x_small, x_big])
+        x = solution.root
+        print("\t\tIterations:\t", solution.iterations)
+        print("\t\tRoot:\t\t", x)
+        print()
+
+        rho1_mag = (((6 * (d31 * tau1 / tau3 + d21 * tau / tau3) * np.power(x, 3) + self.mu * d31 * (
+                np.square(tau) - np.square(tau1)) * tau1 / tau3)) / (
+                            6 * np.power(x, 3) + self.mu * (np.square(tau) - np.square(tau3))) - d11) / d0
+        rho2_mag = aa + self.mu * bb / np.power(x, 3)
+        rho3_mag = (((6 * (d13 * tau3 / tau1 - d23 * tau / tau1) * np.power(x, 3) + self.mu * d13 * (
+                np.square(tau) - np.square(tau3)) * tau3 / tau1)) / (
+                            6 * np.power(x, 3) + self.mu * (np.square(tau) - np.square(tau1))) - d33) / d0
+
+        print("\tFinding Rho Magnitudes")
+        print("\t\tRho1 Magnitude:\t", rho1_mag)
+        print("\t\tRho2 Magnitude:\t", rho2_mag)
+        print("\t\tRho3 Magnitude:\t", rho3_mag)
+        print()
+
+        print("\tCalculating Radius Vectors")
+        r1 = np.add(self.radius[0], np.dot(rho1_mag, self.rho[0]))
+        r2 = np.add(self.radius[1], np.dot(rho2_mag, self.rho[1]))
+        r3 = np.add(self.radius[2], np.dot(rho3_mag, self.rho[2]))
+        print("\t\tr1:\t", r1)
+        print("\t\tr2:\t", r2)
+        print("\t\tr3:\t", r3)
+        print()
+
+        print("\tFinding f and g Coefficients")
+        f1 = 1 - self.mu * np.square(tau1) / (2 * np.power(x, 3))
+        f3 = 1 - self.mu * np.square(tau3) / (2 * np.power(x, 3))
+        g1 = tau1 - self.mu * np.power(tau1, 3) / (6 * np.power(x, 3))
+        g3 = tau3 - self.mu * np.power(tau3, 3) / (6 * np.power(x, 3))
+        print("\t\tf11:\t", f1)
+        print("\t\tf31:\t", f3)
+        print("\t\tg11:\t", g1)
+        print("\t\tg31:\t", g3)
+
+        if self.use_gibbs:
+            print("\tGibbs Method of Calculating Velocity")
+            v2 = self.gibbs.solve(r1, r2, r3, test=False)
+            print("\t\tv2:\t", v2)
+            print()
+        else:
+            print("\tGauss Method of Calculating Velocity")
+            v2 = np.add(np.multiply(-f3, r1), np.multiply(f1, r3)) / (f1 * g3 - f3 * g1)
+            print("\t\tv2:\t", v2)
+            print()
+
+        if self.improvement:
+            print("\tUsing the Self-Consistent Gauss Method Improvement")
+            iteration = 0
+            error = []
+
+            self.rho1_change.append(rho1_mag)
+            self.rho2_change.append(rho2_mag)
+            self.rho3_change.append(rho3_mag)
+
+            f11 = f1
+            f31 = f3
+            g11 = g1
+            g31 = g3
+
+            while True:
+                iteration += 1
+                rho1_prev = rho1_mag
+                rho2_prev = rho2_mag
+                rho3_prev = rho3_mag
+                f11_prev = f11
+                f31_prev = f31
+                g11_prev = g11
+                g31_prev = g31
+
+                r2_mag = np.linalg.norm(r2)
+                v2_mag = np.linalg.norm(v2)
+                rv_r = np.dot(r2, v2) / r2_mag
+                zeta = 2 / r2_mag - np.square(v2_mag) / self.mu
+
+                sol1 = optimize.root_scalar(gauss_q_improve, (r2_mag, zeta, rv_r, self.mu, tau1),
+                                            bracket=[-1000, 1000])
+                chi1 = sol1.root
+
+                sol3 = optimize.root_scalar(gauss_q_improve, (r2_mag, zeta, rv_r, self.mu, tau3),
+                                            bracket=[-1000, 1000])
+                chi3 = sol3.root
+
+                f11 = 1 - np.square(chi1) * stumpff_c(zeta * np.square(chi1)) / r2_mag
+                f31 = 1 - np.square(chi3) * stumpff_c(zeta * np.square(chi3)) / r2_mag
+                g11 = tau1 - np.power(chi1, 3) * stumpff_s(zeta * np.square(chi1)) / np.sqrt(self.mu)
+                g31 = tau3 - np.power(chi3, 3) * stumpff_s(zeta * np.square(chi3)) / np.sqrt(self.mu)
+                f11_avg = (f11 + f11_prev) / 2
+                f31_avg = (f31 + f31_prev) / 2
+                g11_avg = (g11 + g11_prev) / 2
+                g31_avg = (g31 + g31_prev) / 2
+                c1 = g31_avg / (f11_avg * g31_avg - f31_avg * g11_avg)
+                c3 = -g11_avg / (f11_avg * g31_avg - f31_avg * g11_avg)
+
+                rho1_mag = (1 / d0) * (-d11 + d21 / c1 - (c3 / c1) * d31)
+                rho2_mag = (-d12 * c1 - d32 * c3 + d22) / d0
+                rho3_mag = (-c1 * d13 / c3 + d23 / c3 - d33) / d0
+                self.rho1_change.append(rho1_mag)
+                self.rho2_change.append(rho2_mag)
+                self.rho3_change.append(rho3_mag)
+
+                r1 = np.add(self.radius[0], np.dot(rho1_mag, self.rho[0]))
+                r2 = np.add(self.radius[1], np.dot(rho2_mag, self.rho[1]))
+                r3 = np.add(self.radius[2], np.dot(rho3_mag, self.rho[2]))
+
+                if self.use_gibbs:
+                    v2 = self.gibbs.solve(r1, r2, r3, test=False)
+                else:
+                    v2 = np.add(np.multiply(-f31, r1), np.multiply(f11, r3)) / (f11 * g31 - f31 * g11)
+
+                error.append(np.sqrt(np.square(rho1_mag - rho1_prev) + np.square(rho2_mag - rho2_prev) + np.square(
+                    rho3_mag - rho3_prev)))
+                if iteration > self.max_iteration:
+                    raise Exception("Max Iteration Limit Reached:", iteration - 1, "Iterations")
+                elif error[-1] < self.error:
+                    print("\t\tConverged With", iteration, "Iterations")
+                    print()
+                    break
+                else:
+                    continue
+
+            plt.figure(1)
+            plt.plot(error)
+            plt.grid("on")
+            plt.title("Error")
+            plt.xlabel("Iteration #")
+            plt.ylabel("Sum of Delta Rho Squared")
+            plt.savefig("GaussError.png")
+
+            plt.figure(2)
+            plt.plot(self.rho1_change)
+            plt.plot(self.rho2_change)
+            plt.plot(self.rho3_change)
+            plt.grid("on")
+            plt.legend(["Rho1", "Rho2", "Rho3"])
+            plt.title("Delta Rho")
+            plt.xlabel("Iteration #")
+            plt.ylabel("Rho Values")
+            plt.savefig("DeltaRho.png")
+
+            print("\tFinal Radius and Velocity Vectors")
+            print("\t\tr1:\t", r1)
+            print("\t\tr2:\t", r2)
+            print("\t\tr3:\t", r3)
+            print("\t\tv2:\t", v2)
+            print()
+
+        print("Solution Complete")
+        print()
+        return r1, r2, r3, v2
 
 
 class Gibbs:
@@ -26,11 +314,11 @@ class Gibbs:
             d2 = dot_product(u23, norm1)
             d3 = dot_product(u13, norm2)
 
-            print("Verify Values are about 0:")
-            print(d1)
-            print(d2)
-            print(d3)
-            print("End Verify")
+            print("\tVerify Values are about 0:")
+            print("\t\t", d1)
+            print("\t\t", d2)
+            print("\t\t", d3)
+            print("\tEnd Verify")
 
         n1 = [r1_mag * x for x in c23]
         n2 = [r2_mag * x for x in c31]
