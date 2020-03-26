@@ -264,7 +264,8 @@ class Gauss:
             plt.title("Error")
             plt.xlabel("Iteration #")
             plt.ylabel("Sum of Delta Rho Squared")
-            plt.savefig("GaussError.png")
+            plt.show()
+            # plt.savefig("GaussError.png")
 
             plt.figure(2)
             plt.plot(self.rho1_change)
@@ -275,7 +276,8 @@ class Gauss:
             plt.title("Delta Rho")
             plt.xlabel("Iteration #")
             plt.ylabel("Rho Values")
-            plt.savefig("DeltaRho.png")
+            plt.show()
+            # plt.savefig("DeltaRho.png")
 
             print("\tFinal Radius and Velocity Vectors")
             print("\t\tr1:\t", r1)
